@@ -57,7 +57,8 @@ writeShellApplication {
       git clone "${configRepo}" "$DIR"
     elif [ -d "$DIR/.git" ] \
       && [ "$(git -C "$DIR" remote get-url origin 2>/dev/null)" = "${configRepo}" ] \
-      && [ -z "$(git -C "$DIR" status --porcelain)" ]; then
+      && STATUS=$(git -C "$DIR" status --porcelain) \
+      && [ -z "$STATUS" ]; then
       # Clean tree, and only a checkout of this profile's own repo. A dirty
       # tree keeps its local edits, always; an unrelated checkout is never
       # touched.

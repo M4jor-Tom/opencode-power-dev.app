@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
+export PACKAGE_ROOT="$ROOT"
 NAME=${1:-opencode-power-dev}
 case "$NAME" in
   opencode-power-dev) VAR=OPENCODE_POWER_DEV_DIR ;;
@@ -12,7 +13,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/bin" "$WORK/project with spaces"
 # Evaluate package.nix's real text; mock only derivation packaging and input attributes.
-nix eval --impure --raw --expr "let names = [ \"opencode\" \"pi-coding-agent\" \"git\" \"gh\" \"glab\" \"nodejs\" \"bun\" \"ripgrep\" \"fd\" \"jq\" \"yq-go\" \"uv\" \"python3\" \"rtk\" \"graphify\" \"markitdown\" \"pandoc\" \"poppler-utils\" \"yt-dlp\" ]; inputs = builtins.listToAttrs (map (name: { inherit name; value = null; }) names); in let pkg = import $ROOT/package.nix; in pkg ((builtins.intersectAttrs (builtins.functionArgs pkg) inputs) // { lib.platforms.unix = []; writeShellApplication = x: x.text; profileName = \"$NAME\"; configRepo = \"$URL\"; dirEnvVar = \"$VAR\"; })" > "$WORK/launcher"
+nix eval --impure --raw --expr "let names = [ \"opencode\" \"pi-coding-agent\" \"git\" \"gh\" \"glab\" \"nodejs\" \"bun\" \"ripgrep\" \"fd\" \"jq\" \"yq-go\" \"uv\" \"python3\" \"rtk\" \"graphify\" \"markitdown\" \"pandoc\" \"poppler-utils\" \"yt-dlp\" ]; inputs = builtins.listToAttrs (map (name: { inherit name; value = null; }) names); in let pkg = import (builtins.toPath (builtins.getEnv \"PACKAGE_ROOT\" + \"/package.nix\")); in pkg ((builtins.intersectAttrs (builtins.functionArgs pkg) inputs) // { lib.platforms.unix = []; writeShellApplication = x: x.text; profileName = \"$NAME\"; configRepo = \"$URL\"; dirEnvVar = \"$VAR\"; })" > "$WORK/launcher"
 cat > "$WORK/bin/git" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$LOG"
@@ -23,7 +24,7 @@ if [ "$1" = clone ]; then
 elif [ "$1" = -C ]; then
   case "$3" in
     remote) printf '%s\n' "${GIT_ORIGIN:-$URL}" ;;
-    status) printf '%s' "${GIT_STATUS:-}" ;;
+    status) [ "${GIT_STATUS_FAIL:-0}" != 1 ] || exit 45; printf '%s' "${GIT_STATUS:-}" ;;
     pull) [ "${GIT_PULL_FAIL:-0}" != 1 ] ;;
     *) exit 43 ;;
   esac
@@ -58,12 +59,17 @@ grep -Fxq -- "-C $DIR pull --ff-only --quiet" "$LOG"
 export GIT_STATUS=dirty
 run
 assert_run
-! grep -q 'pull ' "$LOG"
+if grep -q 'pull ' "$LOG"; then echo 'Unexpected pull' >&2; exit 1; fi
 unset GIT_STATUS
+export GIT_STATUS_FAIL=1
+run
+assert_run
+if grep -q 'pull ' "$LOG"; then echo 'Unexpected pull' >&2; exit 1; fi
+unset GIT_STATUS_FAIL
 export GIT_ORIGIN='https://example.invalid/foreign.git'
 run
 assert_run
-! grep -q 'pull ' "$LOG"
+if grep -q 'pull ' "$LOG"; then echo 'Unexpected pull' >&2; exit 1; fi
 unset GIT_ORIGIN
 export GIT_PULL_FAIL=1
 run
